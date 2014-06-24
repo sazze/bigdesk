@@ -1,3 +1,19 @@
+/*   
+   Copyright 2011-2014 Lukas Vlcek
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 var ClusterNodesListView = Backbone.View.extend({
 
     selectedClusterNodeView: undefined,
@@ -8,35 +24,42 @@ var ClusterNodesListView = Backbone.View.extend({
 
     initialize: function() {
 
-        this.clear();
-
         var _view = this;
+        _view.clear();
 
-        // Model is not available now (loaded via AJAX), thus we have to
-        // wait for it to be loaded to bind to its events.
-        this.model.on("change:nodesState",
-            function(model){
-
-                var nodes = model.get("nodesState");
-
-                nodes.on("add", function(model){
-                    // We also want to be able to notice when existing node becomes a master or is
-                    // no longer a master. Thus every node gets a "master" attribute change listener.
-                    model.on("change:master", function(){
-                        _view.updateMaster(model);
-                    });
-                    _view.addNode(model);
+        var nodes = _view.model.get("nodesState");
+        if (nodes) {
+            // First, try to bind to event if nodesState model is already there...
+            _view.registerMasterNodeChangeHandler(nodes, _view);
+        } else {
+            // ... if the model is not available yet (because it is loaded via AJAX) then
+            // wait for it to be loaded to bind to its events.
+            this.model.on("change:nodesState",
+                function(model){
+                    var nodes = model.get("nodesState");
+                    _view.registerMasterNodeChangeHandler(nodes, _view);
                 });
+        }
+    },
 
-                nodes.on("remove", function(model){
-                    model.off(); // remove change:master listener
-                    _view.removeNode(model);
-                });
+    registerMasterNodeChangeHandler: function(nodes, view) {
+        nodes.on("add", function(model){
+          // We also want to be able to notice when existing node becomes a master or is
+          // no longer a master. Thus every node gets a "master" attribute change listener.
+          model.on("change:master", function(){
+              view.updateMaster(model);
+          });
+          view.addNode(model);
+        });
 
-//                nodes.on("all", function(eventName){
-//                    console.log(eventName);
-//                });
-            });
+        nodes.on("remove", function(model){
+          model.off(); // remove change:master listener
+          view.removeNode(model);
+        });
+
+//        nodes.on("all", function(eventName){
+//            console.log(eventName);
+//        });
     },
 
     addNode: function(model) {
@@ -130,6 +153,7 @@ var ClusterNodesListView = Backbone.View.extend({
 
     // clean list of nodes and destroy node detail view
     clear: function() {
+        // TODO off all events from initialize()
         this.$el.empty();
         if (this.selectedClusterNodeView) {
             this.selectedClusterNodeView.destroy();
@@ -137,42 +161,50 @@ var ClusterNodesListView = Backbone.View.extend({
         }
     },
 
-    // if no node detail exists (no node is selected) then create a new view for selected node,
-    // if some node is already selected and it differs from selected one, destroy view and create a new one
-    // else ignore...
     nodeClicked: function(event) {
         var _view = this;
-        var _model = _view.model;
         var target = event.target || event.srcElement;
         if (target && target.className) {
             if (target.className.indexOf("clusterNode") > -1) {
 
                 var nodeId = $(target).attr("nodeId");
-                _view.setNodeAsSelected(nodeId);
-
-                if (!this.selectedClusterNodeView) {
-                    this.selectedClusterNodeView = new SelectedClusterNodeView(
-                        {
-                            nodeId: nodeId,
-                            model: _model
-                        }
-                    );
-                    this.selectedClusterNodeView.render();
-                }
-                else if (this.selectedClusterNodeView.nodeId() != $(target).attr("nodeId")) {
-                    this.selectedClusterNodeView.destroy();
-                    this.selectedClusterNodeView = undefined;
-                    this.selectedClusterNodeView = new SelectedClusterNodeView(
-                        {
-                            nodeId: nodeId,
-                            model: _model
-                        }
-                    );
-                    this.selectedClusterNodeView.render();
-                };
+                _view.showNodeDetail(nodeId);
 
             }
         }
+    },
+
+    // if no node detail exists (no node is selected) then create a new view for selected node,
+    // if some node is already selected and it differs from selected one, destroy view and create a new one
+    // else ignore...
+    showNodeDetail: function(nodeId) {
+
+        var _view = this;
+        var _model = _view.model;
+
+        _view.setNodeAsSelected(nodeId);
+
+        if (!this.selectedClusterNodeView) {
+            this.selectedClusterNodeView = new SelectedClusterNodeView(
+                {
+                    nodeId: nodeId,
+                    model: _model
+                }
+            );
+            this.selectedClusterNodeView.render();
+        }
+        else if (this.selectedClusterNodeView.nodeId() != nodeId) {
+            this.selectedClusterNodeView.destroy();
+            this.selectedClusterNodeView = undefined;
+            this.selectedClusterNodeView = new SelectedClusterNodeView(
+                {
+                    nodeId: nodeId,
+                    model: _model
+                }
+            );
+            this.selectedClusterNodeView.render();
+        };
+
     }
 });
 

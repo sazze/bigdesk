@@ -2,8 +2,8 @@
 <html lang="en">
 <head>
     <meta http-equiv="Content-type" content="text/html; charset=utf-8">
-    <title>bigdesk</title>
-    <meta name="description" content="Live charts and statistics for ElasticSearch cluster, v2.0-SNAPSHOT">
+    <title>Bigdesk</title>
+    <meta name="description" content="Live charts and statistics for ElasticSearch cluster, v2.4.0">
 
     <!-- css reset -->
     <link rel="stylesheet" href="css/reset.css">
@@ -24,6 +24,7 @@
     <link rel="stylesheet" type="text/css" media="screen" href="js/charts/not-available/not-available-chart.css" />
     <link rel="stylesheet" type="text/css" media="screen" href="js/charts/time-series/time-series-chart.css" />
     <link rel="stylesheet" type="text/css" media="screen" href="js/charts/time-area/time-area-chart.css" />
+    <link rel="stylesheet" type="text/css" media="screen" href="js/charts/pack/pack.css" />
 
     <!--  css3-mediaqueries-js -->
     <script type="text/javascript" src="js/lib/css3-mediaqueries/css3-mediaqueries.js"></script>
@@ -45,8 +46,10 @@
 
     <!-- bigdesk -->
     <script type="text/javascript" src="js/util/bigdesk_extension.js"></script>
-    <!-- models -->
+    <!-- models & collections -->
     <script type="text/javascript" src="js/models/Hello.js"></script>
+    <script type="text/javascript" src="js/models/cluster/IndicesStatus.js"></script>
+    <script type="text/javascript" src="js/models/cluster/ClusterState.js"></script>
     <script type="text/javascript" src="js/models/cluster/ClusterHealth.js"></script>
     <script type="text/javascript" src="js/models/cluster/NodesState.js"></script>
     <script type="text/javascript" src="js/models/cluster/NodesStats.js"></script>
@@ -57,6 +60,7 @@
     <script type="text/javascript" src="js/views/ClusterHealthView.js"></script>
     <script type="text/javascript" src="js/views/ClusterNodesListView.js"></script>
     <script type="text/javascript" src="js/views/SelectedClusterNodeView.js"></script>
+    <script type="text/javascript" src="js/views/ClusterStateView.js"></script>
     <!-- charts -->
     <script type="text/javascript" src="js/charts/not-available/not-available-chart.js"></script>
     <script type="text/javascript" src="js/charts/time-series/time-series-chart.js"></script>
@@ -66,6 +70,7 @@
     <script type="text/javascript" src="js/store/BigdeskStore.js"></script>
     <script type="text/javascript" src="js/bigdeskApp.js"></script>
 
+    <link rel="icon" href="images/favicon.png" type="image/png">
 </head>
 
 <body>
@@ -112,22 +117,16 @@
         </div>
     </div>
     <div class="row connectionPanel settings">
-        <div class="elevencol last">
-            <input type="checkbox" id="animatedCharts"><label for="animatedCharts"> animated charts</label>
+        <div class="onecol center">
+            <a href="#nodes/master">nodes</a>
         </div>
+        <div class="onecol center">
+            <a href="#cluster">cluster</a>
+        </div>
+        <div class="tencol last">&nbsp;</div>
     </div>
     </form>
-    <div class="row">
-        <div class="threecol">
-            <p id="clusterHealth"></p>
-        </div>
-        <div class="ninecol last">
-            <p id="clusterNodes"></p>
-        </div>
-    </div>
-    <div id="selectedClusterNode" class="row invisible">
-        <div class="twelvecol last"/>
-    </div>
+    <div id="selectedViewDetail"></div>
 </div>
 </body>
 </html>

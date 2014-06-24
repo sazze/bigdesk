@@ -1,3 +1,19 @@
+/*
+   Copyright 2011-2014 Lukas Vlcek
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
 var SelectedClusterNodeView = Backbone.View.extend({
 
     el: "#selectedClusterNode",
@@ -38,8 +54,8 @@ var SelectedClusterNodeView = Backbone.View.extend({
 
         var _view = this;
         var nodeInfoModel = this.model.get("nodeInfo");
+        var dispatcher = this.model.get("dispatcher");
 
-        // TODO: this fetch needs to be able to output to custom log!
         nodeInfoModel.fetch({
 
             nodeId: this.options.nodeId,
@@ -47,7 +63,8 @@ var SelectedClusterNodeView = Backbone.View.extend({
 
                 var selectedNodeInfo = response;
                 var selectedNodeId = _view.options.nodeId;
-                console.log("node info", selectedNodeInfo);
+
+                dispatcher.trigger("onAjaxResponse", response.cluster_name, "Node > Info", response);
 
                 _view.renderNodeDetail(model);
 
@@ -59,6 +76,10 @@ var SelectedClusterNodeView = Backbone.View.extend({
                 var chart_jvmHeapMem = bigdesk_charts.jvmHeapMem.chart(d3.select("#svg_jvmHeapMem"));
                 var chart_jvmNonHeapMem = bigdesk_charts.jvmNonHeapMem.chart(d3.select("#svg_jvmNonHeapMem"));
                 var chart_jvmGC = bigdesk_charts.jvmGC.chart(d3.select("#svg_jvmGC"));
+				var chart_threadpoolSearch = bigdesk_charts.threadpoolSearch.chart(d3.select("#svg_threadpoolSearch"));
+				var chart_threadpoolIndex = bigdesk_charts.threadpoolIndex.chart(d3.select("#svg_threadpoolIndex"));
+				var chart_threadpoolBulk = bigdesk_charts.threadpoolBulk.chart(d3.select("#svg_threadpoolBulk"));
+				var chart_threadpoolRefresh = bigdesk_charts.threadpoolRefresh.chart(d3.select("#svg_threadpoolRefresh"));
                 var chart_osCpu = bigdesk_charts.osCpu.chart(d3.select("#svg_osCpu"));
                 var chart_osMem = bigdesk_charts.osMem.chart(d3.select("#svg_osMem"));
                 var chart_osSwap = bigdesk_charts.osSwap.chart(d3.select("#svg_osSwap"));
@@ -68,6 +89,8 @@ var SelectedClusterNodeView = Backbone.View.extend({
                 var chart_indicesGetReqs = bigdesk_charts.indicesGetReqs.chart(d3.select("#svg_indicesGetReqs"));
                 var chart_indicesGetTime = bigdesk_charts.indicesGetTime.chart(d3.select("#svg_indicesGetTime"));
                 var chart_indicesIndexingReqs = bigdesk_charts.indicesIndexingReqs.chart(d3.select("#svg_indicesIndexingReqs"));
+                var chart_indicesCacheSize = bigdesk_charts.indicesCacheSize.chart(d3.select("#svg_indicesCacheSize"));
+                var chart_indicesCacheEvictions = bigdesk_charts.indicesCacheEvictions.chart(d3.select("#svg_indicesCacheEvictions"));
                 var chart_indicesIndexingTime = bigdesk_charts.indicesIndexingTime.chart(d3.select("#svg_indicesIndexingTime"));
                 var chart_processCPU_time = bigdesk_charts.processCPU_time.chart(d3.select("#svg_processCPU_time"));
 
@@ -111,7 +134,9 @@ var SelectedClusterNodeView = Backbone.View.extend({
                         stats = _.filter(stats, function(item){ return (item!=undefined)});
 
                         stats_the_latest = stats[stats.length - 1];
-//                        console.log("the latest stats snapshot", stats_the_latest);
+
+                        dispatcher.trigger("onNewData", "the latest node stats:", stats_the_latest);
+
                     });
 
                     // --------------------------------------------
@@ -123,7 +148,7 @@ var SelectedClusterNodeView = Backbone.View.extend({
 
                         var theLatestTotalOpened = stats[stats.length-1].node.http.total_opened;
 
-                        chart_channels.animate(animatedCharts).update(opened_http_channels, opened_transport_server_channels);
+                        try { chart_channels.animate(animatedCharts).update(opened_http_channels, opened_transport_server_channels); } catch (ignore) {}
 
                         if (opened_http_channels.length > 0) {
                             $("#open_http_channels").text(opened_http_channels[opened_http_channels.length-1].value);
@@ -154,7 +179,7 @@ var SelectedClusterNodeView = Backbone.View.extend({
                         var jvm_threads_count = bigdesk_charts.jvmThreads.series1(stats);
                         var jvm_threads_peak_count = bigdesk_charts.jvmThreads.series2(stats);
 
-                        chart_jvmThreads.animate(animatedCharts).update(jvm_threads_count, jvm_threads_peak_count);
+                        try { chart_jvmThreads.animate(animatedCharts).update(jvm_threads_count, jvm_threads_peak_count); } catch (ignore) {}
 
                         if (stats_the_latest && stats_the_latest.node) {
                             $("#jvm_threads_peak").text(stats_the_latest.node.jvm.threads.peak_count);
@@ -169,19 +194,30 @@ var SelectedClusterNodeView = Backbone.View.extend({
                     // JVM GC
 
                     _.defer(function(){
-                        var jvm_gc_collection_count_delta = bigdesk_charts.jvmGC.series1(stats);
-                        var jvm_gc_collection_time_delta = bigdesk_charts.jvmGC.series2(stats);
-                        if (jvm_gc_collection_count_delta.length > 1 && jvm_gc_collection_time_delta.length > 1) {
+                        var jvm_gc_young_collection_count_delta = bigdesk_charts.jvmGC.series1(stats);
+                        var jvm_gc_old_collection_count_delta = bigdesk_charts.jvmGC.series2(stats);
+                        var jvm_gc_both_collection_time_delta = bigdesk_charts.jvmGC.series3(stats);
+                        if (jvm_gc_old_collection_count_delta.length > 1 && jvm_gc_young_collection_count_delta.length > 1 && jvm_gc_both_collection_time_delta.length > 1) {
 
-                            delta(jvm_gc_collection_count_delta);
-                            delta(jvm_gc_collection_time_delta);
+                            delta(jvm_gc_old_collection_count_delta);
+                            delta(jvm_gc_young_collection_count_delta);
+                            delta(jvm_gc_both_collection_time_delta);
 
-                            chart_jvmGC.animate(animatedCharts).update(jvm_gc_collection_count_delta, jvm_gc_collection_time_delta);
+                            try {
+								chart_jvmGC.animate(animatedCharts).update(
+									jvm_gc_young_collection_count_delta,
+									jvm_gc_old_collection_count_delta,
+									jvm_gc_both_collection_time_delta);
+							} catch (ignore) {}
                         }
 
                         if (stats_the_latest && stats_the_latest.node) {
-                            $("#jvm_gc_time").text(stats_the_latest.node.jvm.gc.collection_time_in_millis + "ms");
-                            $("#jvm_gc_count").text(stats_the_latest.node.jvm.gc.collection_count);
+                            $("#jvm_gc_time").text(
+								stats_the_latest.node.jvm.gc.collectors.old.collection_time_in_millis + "ms / " + stats_the_latest.node.jvm.gc.collectors.young.collection_time_in_millis + "ms"
+							);
+                            $("#jvm_gc_count").text(
+								stats_the_latest.node.jvm.gc.collectors.old.collection_count + " / " + stats_the_latest.node.jvm.gc.collectors.young.collection_count
+							);
                         } else {
                             $("#jvm_gc_time").text("n/a");
                             $("#jvm_gc_count").text("n/a");
@@ -195,7 +231,7 @@ var SelectedClusterNodeView = Backbone.View.extend({
                         var jvm_heap_used_mem= bigdesk_charts.jvmHeapMem.series1(stats);
                         var jvm_heap_committed_mem= bigdesk_charts.jvmHeapMem.series2(stats);
 
-                        chart_jvmHeapMem.animate(animatedCharts).update(jvm_heap_used_mem, jvm_heap_committed_mem);
+                        try { chart_jvmHeapMem.animate(animatedCharts).update(jvm_heap_used_mem, jvm_heap_committed_mem); } catch (ignore) {}
 
                         if (stats_the_latest && stats_the_latest.node) {
                             $("#jvm_heap_mem_committed").text(stats_the_latest.node.jvm.mem.heap_committed);
@@ -213,7 +249,7 @@ var SelectedClusterNodeView = Backbone.View.extend({
                         var jvm_non_heap_used_mem= bigdesk_charts.jvmNonHeapMem.series1(stats);
                         var jvm_non_heap_committed_mem= bigdesk_charts.jvmNonHeapMem.series2(stats);
 
-                        chart_jvmNonHeapMem.animate(animatedCharts).update(jvm_non_heap_used_mem, jvm_non_heap_committed_mem);
+                        try { chart_jvmNonHeapMem.animate(animatedCharts).update(jvm_non_heap_used_mem, jvm_non_heap_committed_mem); } catch (ignore) {}
 
                         if (stats_the_latest && stats_the_latest.node) {
                             $("#jvm_non_heap_mem_committed").text(stats_the_latest.node.jvm.mem.non_heap_committed);
@@ -223,6 +259,91 @@ var SelectedClusterNodeView = Backbone.View.extend({
                             $("#jvm_non_heap_mem_used").text("n/a");
                         }
                     });
+
+					// --------------------------------------------
+					// Threadpool Search
+
+                    _.defer(function(){
+                        var threadpool_search_count = bigdesk_charts.threadpoolSearch.series1(stats);
+                        var threadpool_search_peak = bigdesk_charts.threadpoolSearch.series2(stats);
+                        var threadpool_search_queue = bigdesk_charts.threadpoolSearch.series3(stats);
+
+                        try { chart_threadpoolSearch.animate(animatedCharts).update(threadpool_search_count, threadpool_search_peak, threadpool_search_queue); } catch (ignore) {}
+
+                        if (stats_the_latest && stats_the_latest.node) {
+                            $("#tp_search_count").text(stats_the_latest.node.thread_pool.search.active);
+                            $("#tp_search_peak").text(stats_the_latest.node.thread_pool.search.largest);
+                            $("#tp_search_queue").text(stats_the_latest.node.thread_pool.search.queue);
+                        } else {
+                            $("#tp_search_count").text("n/a");
+                            $("#tp_search_peak").text("n/a");
+                            $("#tp_search_queue").text("n/a");
+                        }
+                    });
+
+					// --------------------------------------------
+					// Threadpool Index
+
+                    _.defer(function(){
+                        var threadpool_index_count = bigdesk_charts.threadpoolIndex.series1(stats);
+                        var threadpool_index_peak = bigdesk_charts.threadpoolIndex.series2(stats);
+                        var threadpool_index_queue = bigdesk_charts.threadpoolIndex.series3(stats);
+
+                        try { chart_threadpoolIndex.animate(animatedCharts).update(threadpool_index_count, threadpool_index_peak, threadpool_index_queue); } catch (ignore) {}
+
+                        if (stats_the_latest && stats_the_latest.node) {
+                            $("#tp_index_count").text(stats_the_latest.node.thread_pool.index.active);
+                            $("#tp_index_peak").text(stats_the_latest.node.thread_pool.index.largest);
+                            $("#tp_index_queue").text(stats_the_latest.node.thread_pool.index.queue);
+                        } else {
+                            $("#tp_index_count").text("n/a");
+                            $("#tp_index_peak").text("n/a");
+                            $("#tp_index_queue").text("n/a");
+                        }
+                    });
+
+					// --------------------------------------------
+					// Threadpool Bulk
+
+                    _.defer(function(){
+                        var threadpool_bulk_count = bigdesk_charts.threadpoolBulk.series1(stats);
+                        var threadpool_bulk_peak = bigdesk_charts.threadpoolBulk.series2(stats);
+                        var threadpool_bulk_queue = bigdesk_charts.threadpoolBulk.series3(stats);
+
+                        try { chart_threadpoolBulk.animate(animatedCharts).update(threadpool_bulk_count, threadpool_bulk_peak, threadpool_bulk_queue); } catch (ignore) {}
+
+                        if (stats_the_latest && stats_the_latest.node) {
+                            $("#tp_bulk_count").text(stats_the_latest.node.thread_pool.bulk.active);
+                            $("#tp_bulk_peak").text(stats_the_latest.node.thread_pool.bulk.largest);
+                            $("#tp_bulk_queue").text(stats_the_latest.node.thread_pool.bulk.queue);
+                        } else {
+                            $("#tp_bulk_count").text("n/a");
+                            $("#tp_bulk_peak").text("n/a");
+                            $("#tp_bulk_queue").text("n/a");
+                        }
+                    });
+
+					// --------------------------------------------
+					// Threadpool Refresh
+
+                    _.defer(function(){
+                        var threadpool_refresh_count = bigdesk_charts.threadpoolRefresh.series1(stats);
+                        var threadpool_refresh_peak = bigdesk_charts.threadpoolRefresh.series2(stats);
+                        var threadpool_refresh_queue = bigdesk_charts.threadpoolRefresh.series3(stats);
+
+                        try { chart_threadpoolRefresh.animate(animatedCharts).update(threadpool_refresh_count, threadpool_refresh_peak, threadpool_refresh_queue); } catch (ignore) {}
+
+                        if (stats_the_latest && stats_the_latest.node) {
+                            $("#tp_refresh_count").text(stats_the_latest.node.thread_pool.refresh.active);
+                            $("#tp_refresh_peak").text(stats_the_latest.node.thread_pool.refresh.largest);
+                            $("#tp_refresh_queue").text(stats_the_latest.node.thread_pool.refresh.queue);
+                        } else {
+                            $("#tp_refresh_count").text("n/a");
+                            $("#tp_refresh_peak").text("n/a");
+                            $("#tp_refresh_queue").text("n/a");
+                        }
+                    });
+
 
                     // --------------------------------------------
                     // OS Info
@@ -246,10 +367,10 @@ var SelectedClusterNodeView = Backbone.View.extend({
                             var os_cpu_user = bigdesk_charts.osCpu.series2(stats);
                             var os_cpu_idle = bigdesk_charts.osCpu.series3(stats);
 
-                            chart_osCpu.animate(animatedCharts).update(os_cpu_sys, os_cpu_user, os_cpu_idle);
+                            try { chart_osCpu.animate(animatedCharts).update(os_cpu_sys, os_cpu_user, os_cpu_idle); } catch (ignore) {}
 
-                            $("#os_cpu_user").text(stats_the_latest.node.os.cpu.user);
-                            $("#os_cpu_sys").text(stats_the_latest.node.os.cpu.sys);
+                            $("#os_cpu_user").text(stats_the_latest.node.os.cpu.user + "%");
+                            $("#os_cpu_sys").text(stats_the_latest.node.os.cpu.sys + "%");
                         } else {
                             chart_osCpu = bigdesk_charts.not_available.chart(chart_osCpu.svg());
                             $("#os_cpu_user").text("n/a");
@@ -262,12 +383,12 @@ var SelectedClusterNodeView = Backbone.View.extend({
 
                     _.defer(function(){
                         // sigar & AWS check
-                        if (stats_the_latest && stats_the_latest.node && stats_the_latest.node.os && stats_the_latest.node.mem) {
+                        if (stats_the_latest && stats_the_latest.node && stats_the_latest.node.os && stats_the_latest.node.os.mem) {
 
                             var os_mem_actual_used = bigdesk_charts.osMem.series1(stats);
                             var os_mem_actual_free = bigdesk_charts.osMem.series2(stats);
 
-                            chart_osMem.animate(animatedCharts).update(os_mem_actual_used, os_mem_actual_free);
+                            try { chart_osMem.animate(animatedCharts).update(os_mem_actual_used, os_mem_actual_free); } catch (ignore) {}
 
                             $("#os_mem_free").text(stats_the_latest.node.os.mem.actual_free);
                             $("#os_mem_used").text(stats_the_latest.node.os.mem.actual_used);
@@ -288,7 +409,7 @@ var SelectedClusterNodeView = Backbone.View.extend({
                             var os_swap_used = bigdesk_charts.osSwap.series1(stats);
                             var os_swap_free = bigdesk_charts.osSwap.series2(stats);
 
-                            chart_osSwap.animate(animatedCharts).update(os_swap_used, os_swap_free);
+                            try { chart_osSwap.animate(animatedCharts).update(os_swap_used, os_swap_free); } catch (ignore) {}
 
                             $("#os_swap_free").text(stats_the_latest.node.os.swap.free);
                             $("#os_swap_used").text(
@@ -314,7 +435,7 @@ var SelectedClusterNodeView = Backbone.View.extend({
                             var os_loadAvg_1 = bigdesk_charts.osLoadAvg.series2(stats);
                             var os_loadAvg_2 = bigdesk_charts.osLoadAvg.series3(stats);
 
-                            chart_osLoadAvg.animate(animatedCharts).update(os_loadAvg_0, os_loadAvg_1, os_loadAvg_2);
+                            try { chart_osLoadAvg.animate(animatedCharts).update(os_loadAvg_0, os_loadAvg_1, os_loadAvg_2); } catch (ignore) {}
 
                             $("#os_load_0").text(stats_the_latest.node.os.load_average["0"]);
                             $("#os_load_1").text(stats_the_latest.node.os.load_average["1"]);
@@ -358,7 +479,10 @@ var SelectedClusterNodeView = Backbone.View.extend({
                             normalizedDeltaToSeconds(indices_fetch_reqs);
                             normalizedDeltaToSeconds(indices_query_reqs);
 
-                            chart_indicesSearchReqs.animate(animatedCharts).update(indices_fetch_reqs, indices_query_reqs);
+                            try { chart_indicesSearchReqs.animate(animatedCharts).update(indices_fetch_reqs, indices_query_reqs); } catch (ignore) {}
+
+                            $("#indices_search_query_reqs").text(stats_the_latest.node.indices.search.query_total);
+                            $("#indices_search_fetch_reqs").text(stats_the_latest.node.indices.search.fetch_total);
                         }
                     });
 
@@ -374,7 +498,10 @@ var SelectedClusterNodeView = Backbone.View.extend({
                             normalizedDeltaToSeconds(indices_fetch_time);
                             normalizedDeltaToSeconds(indices_query_time);
 
-                            chart_indicesSearchTime.animate(animatedCharts).update(indices_fetch_time, indices_query_time);
+                            try { chart_indicesSearchTime.animate(animatedCharts).update(indices_fetch_time, indices_query_time); } catch (ignore) {}
+
+                            $("#indices_search_query_time").text(stats_the_latest.node.indices.search.query_time);
+                            $("#indices_search_fetch_time").text(stats_the_latest.node.indices.search.fetch_time);
                         }
                     });
 
@@ -392,7 +519,11 @@ var SelectedClusterNodeView = Backbone.View.extend({
                             normalizedDeltaToSeconds(indices_missing_reqs);
                             normalizedDeltaToSeconds(indices_exists_reqs);
 
-                            chart_indicesGetReqs.animate(animatedCharts).update(indices_get_reqs, indices_missing_reqs, indices_exists_reqs);
+                            try { chart_indicesGetReqs.animate(animatedCharts).update(indices_get_reqs, indices_missing_reqs, indices_exists_reqs); } catch (ignore) {}
+
+                            $("#indices_get_reqs").text(stats_the_latest.node.indices.get.total);
+                            $("#indices_exists_reqs").text(stats_the_latest.node.indices.get.exists_total);
+                            $("#indices_missing_reqs").text(stats_the_latest.node.indices.get.missing_total);
                         }
                     });
 
@@ -410,7 +541,11 @@ var SelectedClusterNodeView = Backbone.View.extend({
                             normalizedDeltaToSeconds(indices_missing_time);
                             normalizedDeltaToSeconds(indices_exists_time);
 
-                            chart_indicesGetTime.animate(animatedCharts).update(indices_get_time, indices_missing_time, indices_exists_time);
+                            try { chart_indicesGetTime.animate(animatedCharts).update(indices_get_time, indices_missing_time, indices_exists_time); } catch (ignore) {}
+
+                            $("#indices_get_time").text(stats_the_latest.node.indices.get.get_time);
+                            $("#indices_exists_time").text(stats_the_latest.node.indices.get.exists_time);
+                            $("#indices_missing_time").text(stats_the_latest.node.indices.get.missing_time);
                         }
                     });
 
@@ -426,7 +561,10 @@ var SelectedClusterNodeView = Backbone.View.extend({
                             normalizedDeltaToSeconds(indices_indexing_index_reqs);
                             normalizedDeltaToSeconds(indices_indexing_delete_reqs);
 
-                            chart_indicesIndexingReqs.animate(animatedCharts).update(indices_indexing_index_reqs, indices_indexing_delete_reqs);
+                            try { chart_indicesIndexingReqs.animate(animatedCharts).update(indices_indexing_index_reqs, indices_indexing_delete_reqs); } catch (ignore) {}
+
+                            $("#indices_indexing_delete_reqs").text(stats_the_latest.node.indices.indexing.delete_total);
+                            $("#indices_indexing_index_reqs").text(stats_the_latest.node.indices.indexing.index_total);
                         }
                     });
 
@@ -442,9 +580,66 @@ var SelectedClusterNodeView = Backbone.View.extend({
                             normalizedDeltaToSeconds(indices_indexing_index_time);
                             normalizedDeltaToSeconds(indices_indexing_delete_time);
 
-                            chart_indicesIndexingTime.animate(animatedCharts).update(indices_indexing_index_time, indices_indexing_delete_time);
+                            try { chart_indicesIndexingTime.animate(animatedCharts).update(indices_indexing_index_time, indices_indexing_delete_time); } catch (ignore) {}
+
+                            $("#indices_indexing_delete_time").text(stats_the_latest.node.indices.indexing.delete_time);
+                            $("#indices_indexing_index_time").text(stats_the_latest.node.indices.indexing.index_time);
                         }
                     });
+
+                    // --------------------------------------------
+                    // Indices: cache size
+
+                    _.defer(function(){
+                        var indices_cache_field_size = bigdesk_charts.indicesCacheSize.series1(stats);
+                        var indices_cache_filter_size = bigdesk_charts.indicesCacheSize.series2(stats);
+                        var indices_id_cache_size = bigdesk_charts.indicesCacheSize.series3(stats);
+
+                        try { chart_indicesCacheSize.animate(animatedCharts)
+							.update(indices_cache_field_size, indices_cache_filter_size, indices_id_cache_size);
+						} catch (ignore) {}
+
+                        if (stats_the_latest.node && stats_the_latest.node.indices && stats_the_latest.node.indices.filter_cache) {
+                            $("#indices_filter_cache_size").text(stats_the_latest.node.indices.filter_cache.memory_size);
+                            $("#indices_field_cache_size").text(stats_the_latest.node.indices.fielddata.memory_size);
+                            $("#indices_id_cache_size").text(stats_the_latest.node.indices.id_cache.memory_size);
+                        } else {
+                            $("#indices_filter_cache_size").text("n/a");
+                            $("#indices_field_cache_size").text("n/a");
+                            $("#indices_id_cache_size").text("n/a");
+                        }
+                    });
+
+                    // --------------------------------------------
+                    // Indices: cache evictions
+
+                    _.defer(function(){
+                        var indices_cache_field_evictions = bigdesk_charts.indicesCacheEvictions.series1(stats);
+                        var indices_cache_filter_evictions = bigdesk_charts.indicesCacheEvictions.series2(stats);
+
+                        if (indices_cache_field_evictions.length > 1 && indices_cache_filter_evictions.length > 1) {
+
+                            normalizedDeltaToSeconds(indices_cache_field_evictions);
+                            normalizedDeltaToSeconds(indices_cache_filter_evictions);
+
+                            try { chart_indicesCacheEvictions.animate(animatedCharts).update(indices_cache_field_evictions, indices_cache_filter_evictions); } catch (ignore) {}
+
+                            $("#indices_filter_cache_evictions").text(stats_the_latest.node.indices.filter_cache.evictions);
+                            $("#indices_field_cache_evictions").text(stats_the_latest.node.indices.fielddata.evictions);
+
+                        }
+                    });
+
+                    // --------------------------------------------
+                    // Indices: cache filter count
+
+//                    _.defer(function(){
+//                        if (stats_the_latest.node && stats_the_latest.node.indices && stats_the_latest.node.indices.cache) {
+//                            $("#indices_cache_filter_size").text(stats_the_latest.node.indices.cache.filter_count);
+//                        } else {
+//                            $("#indices_cache_filter_size").text("n/a");
+//                        }
+//                    });
 
                     // --------------------------------------------
                     // Process: CPU time (in millis)
@@ -453,15 +648,22 @@ var SelectedClusterNodeView = Backbone.View.extend({
                         // sigar & AWS check
                         if (stats_the_latest && stats_the_latest.node && stats_the_latest.node.process && stats_the_latest.node.process.cpu) {
 
+                            var calcType = $("#process_time_avg_calc_type").find(":selected").val();
+
                             var process_cpu_time_user_delta = bigdesk_charts.processCPU_time.series1(stats);
                             var process_cpu_time_sys_delta = bigdesk_charts.processCPU_time.series2(stats);
 
                             if (process_cpu_time_sys_delta.length > 1 && process_cpu_time_user_delta.length > 1) {
 
-                                delta(process_cpu_time_user_delta);
-                                delta(process_cpu_time_sys_delta);
+                                if (calcType == "weighted") {
+                                    normalizedDeltaToSeconds(process_cpu_time_user_delta);
+                                    normalizedDeltaToSeconds(process_cpu_time_sys_delta);
+                                } else {
+                                    delta(process_cpu_time_user_delta);
+                                    delta(process_cpu_time_sys_delta);
+                                }
 
-                                chart_processCPU_time.animate(animatedCharts).update(process_cpu_time_user_delta, process_cpu_time_sys_delta);
+                                try { chart_processCPU_time.animate(animatedCharts).update(process_cpu_time_user_delta, process_cpu_time_sys_delta); } catch (ignore) {}
                             }
 
                             $("#process_cpu_time_sys").text(stats_the_latest.node.process.cpu.sys_in_millis + "ms");
@@ -484,7 +686,8 @@ var SelectedClusterNodeView = Backbone.View.extend({
                                 value: +selectedNodeInfo.nodes[selectedNodeId].process.max_file_descriptors
                             }
                         });
-                        chart_fileDescriptors.animate(animatedCharts).update(open_file_descriptors, max_file_descriptors);
+
+                        try { chart_fileDescriptors.animate(animatedCharts).update(open_file_descriptors, max_file_descriptors); } catch (ignore) {}
 
                         if (open_file_descriptors.length > 0) {
                             $("#open_file_descriptors").text(open_file_descriptors[open_file_descriptors.length-1].value);
@@ -518,10 +721,10 @@ var SelectedClusterNodeView = Backbone.View.extend({
                                 }
                             });
 
-                            chart_processCPU_pct.animate(animatedCharts).update(process_cpu_pct, process_cpu_max);
+                            try { chart_processCPU_pct.animate(animatedCharts).update(process_cpu_pct, process_cpu_max); } catch (ignore) {}
 
                             $("#process_cpu_pct_total").text((_total_cores * 100) + "%");
-                            $("#process_cpu_pct_process").text(stats_the_latest.node.process.cpu.percent);
+                            $("#process_cpu_pct_process").text(stats_the_latest.node.process.cpu.percent + "%");
                         } else {
                             chart_processCPU_pct = bigdesk_charts.not_available.chart(chart_processCPU_pct.svg());
                             $("#process_cpu_pct_total").text("n/a");
@@ -540,7 +743,7 @@ var SelectedClusterNodeView = Backbone.View.extend({
                             var process_mem_resident = bigdesk_charts.processMem.series2(stats);
                             var process_mem_total_virtual = bigdesk_charts.processMem.series3(stats);
 
-                            chart_processMem.animate(animatedCharts).update(process_mem_share, process_mem_resident, process_mem_total_virtual);
+                            try { chart_processMem.animate(animatedCharts).update(process_mem_share, process_mem_resident, process_mem_total_virtual); } catch (ignore) {}
 
                             $("#process_mem_total_virtual").text(stats_the_latest.node.process.mem.total_virtual);
                             $("#process_mem_resident").text(stats_the_latest.node.process.mem.resident);
@@ -557,17 +760,36 @@ var SelectedClusterNodeView = Backbone.View.extend({
                     // Transport: Tx Rx
 
                     _.defer(function(){
+
+                        var calcType = $("#transport_avg_calc_type").find(":selected").val();
+
                         var transport_tx_delta = bigdesk_charts.transport_txrx.series1(stats);
                         var transport_rx_delta = bigdesk_charts.transport_txrx.series2(stats);
 
                         if (transport_tx_delta.length > 1 && transport_rx_delta.length > 1) {
 
-//                            delta(transport_tx_delta);
-//                            delta(transport_rx_delta);
-                            normalizedDeltaToSeconds(transport_tx_delta);
-                            normalizedDeltaToSeconds(transport_rx_delta);
+                            if (calcType == "weighted") {
+                                normalizedDeltaToSeconds(transport_tx_delta);
+                                normalizedDeltaToSeconds(transport_rx_delta);
+                            } else {
+                                delta(transport_tx_delta);
+                                delta(transport_rx_delta);
+                            }
 
-                            chart_transport_txrx.animate(animatedCharts).update(transport_tx_delta, transport_rx_delta);
+                            try { chart_transport_txrx.animate(animatedCharts).update(transport_tx_delta, transport_rx_delta); } catch (ignore) {}
+                        }
+                        var _t = stats_the_latest.node.transport;
+                        if (_t && _t.rx_size && _t.tx_size && _t.rx_count != undefined && _t.tx_count != undefined) {
+                            $("#transport_rx_size").text(stats_the_latest.node.transport.rx_size);
+                            $("#transport_tx_size").text(stats_the_latest.node.transport.tx_size);
+                            $("#transport_rx_count").text(stats_the_latest.node.transport.rx_count);
+                            $("#transport_tx_count").text(stats_the_latest.node.transport.tx_count);
+                        } else {
+                            chart_transport_txrx = bigdesk_charts.not_available.chart(chart_transport_txrx.svg());
+                            $("#transport_rx_size").text("n/a");
+                            $("#transport_tx_size").text("n/a");
+                            $("#transport_rx_count").text("n/a");
+                            $("#transport_tx_count").text("n/a");
                         }
                     });
 
@@ -602,8 +824,8 @@ var SelectedClusterNodeView = Backbone.View.extend({
                                         var fsp_charts = _view.make("p", {},
                                             "<div style='overflow: auto;'>" +
                                                 "<svg width='100%' height='160'>" +
-                                                    "<svg id='svg_fsChart_cnt_"+keys[i]+"' clip_id='clip_fsChart_cnt_"+keys[i]+"' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-                                                    "<svg id='svg_fsChart_size_"+keys[i]+"' clip_id='clip_fsChart_size_"+keys[i]+"' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
+                                                    "<svg id='svg_fsChart_cnt_"+keys[i]+"' clip_id='clip_fsChart_cnt_"+keys[i]+"' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                                                    "<svg id='svg_fsChart_size_"+keys[i]+"' clip_id='clip_fsChart_size_"+keys[i]+"' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
                                                 "</svg>" +
                                                 "<div width='46.5%' style='margin-left: 0%; float: left;'>" + fsInfo_cnt + "</div>" +
                                                 "<div width='46.5%' style='margin-left: 54%;'>" + fsInfo_size + "</div>" +
@@ -629,7 +851,7 @@ var SelectedClusterNodeView = Backbone.View.extend({
                                     $("#fs_disk_available_"+keys[i]).text(fs_data.available);
 
                                     // sigar & AWS check
-                                    if (fs_data.disk_writes && fs_data.disk_reads) {
+                                    if (fs_data.disk_writes != undefined && fs_data.disk_reads != undefined) {
                                         var read_cnt_delta = bigdesk_charts.disk_reads_writes_cnt.series1(stats, keys[i]);
                                         var write_cnt_delta = bigdesk_charts.disk_reads_writes_cnt.series2(stats, keys[i]);
 
@@ -640,7 +862,7 @@ var SelectedClusterNodeView = Backbone.View.extend({
                                             normalizedDeltaToSeconds(read_cnt_delta);
                                             normalizedDeltaToSeconds(write_cnt_delta);
 
-                                            charts_disk_reads_writes_cnt[keys[i]].animate(animatedCharts).update(read_cnt_delta, write_cnt_delta);
+                                            try { charts_disk_reads_writes_cnt[keys[i]].animate(animatedCharts).update(read_cnt_delta, write_cnt_delta); } catch (ignore) {}
                                         }
 
                                         $("#fs_disk_writes_"+keys[i]).text(fs_data.disk_writes);
@@ -663,7 +885,7 @@ var SelectedClusterNodeView = Backbone.View.extend({
                                             normalizedDeltaToSeconds(read_size_delta);
                                             normalizedDeltaToSeconds(write_size_delta);
 
-                                            charts_disk_reads_writes_size[keys[i]].animate(animatedCharts).update(read_size_delta, write_size_delta);
+                                            try { charts_disk_reads_writes_size[keys[i]].animate(animatedCharts).update(read_size_delta, write_size_delta); } catch (ignore) {}
                                         }
 
                                         $("#fs_disk_write_size_"+keys[i]).text(fs_data.disk_write_size);
@@ -721,20 +943,24 @@ var SelectedClusterNodeView = Backbone.View.extend({
         // HTTP & Transport
 
         var channels = Mustache.render(templates.selectedClusterNode.channelsTemplate, {});
+        var transportRxTx = Mustache.render(templates.selectedClusterNode.transportRxTx, {});
+
+        var avgTransportCalcType = Mustache.render(templates.avgCalculationType, { id: "transport_avg_calc_type" });
+        transportRxTx = transportRxTx.replace("<!--#-->", avgTransportCalcType);
+
         var selectedNodeHTTP = Mustache.render(templates.selectedClusterNode.selectedNodeHTTPTemplate, jsonModel);
         var selectedNodeTransport = Mustache.render(templates.selectedClusterNode.selectedNodeTransportTemplate, jsonModel);
-//        var _tbd = Mustache.render(templates.selectedClusterNode.TDBTemplate, {});
 
         var desp1 = this.make("p", {}, selectedNodeHTTP);
         var desp2 = this.make("p", {}, selectedNodeTransport);
         var desp3 = this.make("p", {},
             "<div style='overflow: auto;'>" +
                 "<svg width='100%' height='160'>" +
-                    "<svg id='svg_channels' clip_id='clip_channels' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-                    "<svg id='svg_transport_txrx' clip_id='clip_transport_txrx' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_channels' clip_id='clip_channels' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_transport_txrx' clip_id='clip_transport_txrx' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
                 "</svg>" +
                 "<div width='46.5%' style='margin-left: 0%; float: left;'>"+channels+"</div>" +
-                "<div width='46.5%' style='margin-left: 54%;'></div>" +
+                "<div width='46.5%' style='margin-left: 54%;'>"+transportRxTx+"</div>" +
             "</div>"
         );
 
@@ -782,8 +1008,8 @@ var SelectedClusterNodeView = Backbone.View.extend({
         var jvmpCharts1 = this.make("p", {},
             "<div style='overflow: auto;'>" +
                 "<svg width='100%' height='160'>" +
-                    "<svg id='svg_jvmHeapMem' clip_id='clip_jvmHeapMem' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-                    "<svg id='svg_jvmNonHeapMem' clip_id='clip_jvmNonHeapMem' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_jvmHeapMem' clip_id='clip_jvmHeapMem' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_jvmNonHeapMem' clip_id='clip_jvmNonHeapMem' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
                 "</svg>" +
                 "<div width='46.5%' style='margin-left: 0%; float: left;'>" + jvmHeapMem + "</div>" +
                 "<div width='46.5%' style='margin-left: 54%;'>" + jvmNonHeapMem + "</div>" +
@@ -796,8 +1022,8 @@ var SelectedClusterNodeView = Backbone.View.extend({
         var jvmpCharts2 = this.make("p", {},
             "<div style='overflow: auto;'>" +
                 "<svg width='100%' height='160'>" +
-                    "<svg id='svg_jvmThreads' clip_id='clip_jvmThreads' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-                    "<svg id='svg_jvmGC' clip_id='clip_jvmGC' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_jvmThreads' clip_id='clip_jvmThreads' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_jvmGC' clip_id='clip_jvmGC' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
                 "</svg>" +
                 "<div width='46.5%' style='margin-left: 0%; float: left;'>" + jvmThreads + "</div>" +
                 "<div width='46.5%' style='margin-left: 54%;'>" + jvmGC + "</div>" +
@@ -812,6 +1038,54 @@ var SelectedClusterNodeView = Backbone.View.extend({
         $(rowJvmCharts).append(jvmColCharts1, jvmColCharts2);
         $(jvmColCharts1).append(jvmpCharts1);
         $(jvmColCharts2).append(jvmpCharts2);
+
+        // ThreadPool title
+
+        var tpTitleP = this.make("p", {}, "<h2>Thread Pools</h2>");
+        var tpTitleCol = this.make("div", {"class":"twelvecol last"});
+        var rowtpTitle = this.make("div", {"class":"row nodeDetail newSection"});
+
+        $(rowtpTitle).append(tpTitleCol);
+        $(tpTitleCol).append(tpTitleP);
+
+		// Threadpool row for charts
+
+        var tpSearch = Mustache.render(templates.selectedClusterNode.threadPoolSearch, jsonModel);
+        var tpIndex = Mustache.render(templates.selectedClusterNode.threadPoolIndex, jsonModel);
+
+        var tppCharts1 = this.make("p", {},
+            "<div style='overflow: auto;'>" +
+                "<svg width='100%' height='160'>" +
+                    "<svg id='svg_threadpoolSearch' clip_id='clip_threadpoolSearch' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_threadpoolIndex' clip_id='clip_threadpoolIndex' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                "</svg>" +
+                "<div width='46.5%' style='margin-left: 0%; float: left;'>" + tpSearch + "</div>" +
+                "<div width='46.5%' style='margin-left: 54%;'>" + tpIndex + "</div>" +
+            "</div>"
+        );
+
+		var tpBulk = Mustache.render(templates.selectedClusterNode.threadPoolBulk, jsonModel);
+        var tpRefresh = Mustache.render(templates.selectedClusterNode.threadPoolRefresh, jsonModel);
+
+        var tppCharts2 = this.make("p", {},
+            "<div style='overflow: auto;'>" +
+                "<svg width='100%' height='160'>" +
+                    "<svg id='svg_threadpoolBulk' clip_id='clip_threadpoolBulk' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_threadpoolRefresh' clip_id='clip_threadpoolRefresh' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                "</svg>" +
+                "<div width='46.5%' style='margin-left: 0%; float: left;'>" + tpBulk + "</div>" +
+                "<div width='46.5%' style='margin-left: 54%;'>" + tpRefresh + "</div>" +
+            "</div>"
+        );
+
+        var tpColCharts1 = this.make("div", {"class":"sixcol"});
+        var tpColCharts2 = this.make("div", {"class":"sixcol last"});
+
+        var rowTpCharts = this.make("div", {"class":"row nodeDetail"});
+
+        $(rowTpCharts).append(tpColCharts1, tpColCharts2);
+        $(tpColCharts1).append(tppCharts1);
+        $(tpColCharts2).append(tppCharts2);
 
         // OS title
 
@@ -847,8 +1121,8 @@ var SelectedClusterNodeView = Backbone.View.extend({
         var osCharts1 = this.make("p", {},
             "<div style='overflow: auto;'>" +
                 "<svg width='100%' height='160'>" +
-                    "<svg id='svg_osCpu' clip_id='clip_osCpu' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-                    "<svg id='svg_osMem' clip_id='clip_osMem' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_osCpu' clip_id='clip_osCpu' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_osMem' clip_id='clip_osMem' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
                 "</svg>" +
                 "<div width='46.5%' style='margin-left: 0%; float: left;'>" + osCpu + "</div>" +
                 "<div width='46.5%' style='margin-left: 54%;'>" + osMem + "</div>" +
@@ -861,8 +1135,8 @@ var SelectedClusterNodeView = Backbone.View.extend({
         var osCharts2 = this.make("p", {},
             "<div style='overflow: auto;'>" +
                 "<svg width='100%' height='160'>" +
-                    "<svg id='svg_osSwap' clip_id='clip_osSwap' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-                    "<svg id='svg_osLoadAvg' clip_id='clip_osLoadAvg' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_osSwap' clip_id='clip_osSwap' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_osLoadAvg' clip_id='clip_osLoadAvg' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
                 "</svg>" +
                 "<div width='46.5%' style='margin-left: 0%; float: left;'>" + osSwap + "</div>" +
                 "<div width='46.5%' style='margin-left: 54%;'>" + osLoad + "</div>" +
@@ -895,8 +1169,8 @@ var SelectedClusterNodeView = Backbone.View.extend({
         var processCharts1 = this.make("p", {},
             "<div style='overflow: auto;'>" +
                 "<svg width='100%' height='160'>" +
-                    "<svg id='svg_fileDescriptors' clip_id='clip_fileDescriptors' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-                    "<svg id='svg_processMem' clip_id='clip_processMem' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_fileDescriptors' clip_id='clip_fileDescriptors' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_processMem' clip_id='clip_processMem' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
                 "</svg>" +
                 "<div width='46.5%' style='margin-left: 0%; float: left;'>" + fileDescriptors + "</div>" +
                 "<div width='46.5%' style='margin-left: 54%;'>" + processMem + "</div>" +
@@ -906,11 +1180,14 @@ var SelectedClusterNodeView = Backbone.View.extend({
         var processCPU_time = Mustache.render(templates.selectedClusterNode.process_CPU_timeTemplate, jsonModel);
         var processCPU_pct = Mustache.render(templates.selectedClusterNode.process_CPU_pctTemplate, jsonModel);
 
+        var avgProcessTimeCalcType = Mustache.render(templates.avgCalculationType, { id: "process_time_avg_calc_type" });
+        processCPU_time = processCPU_time.replace("<!--#-->", avgProcessTimeCalcType);
+
         var processCharts2 = this.make("p", {},
             "<div style='overflow: auto;'>" +
                 "<svg width='100%' height='160'>" +
-                    "<svg id='svg_processCPU_time' clip_id='clip_processCPU_time' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-                    "<svg id='svg_processCPU_pct' clip_id='clip_processCPU_pct' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_processCPU_time' clip_id='clip_processCPU_time' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_processCPU_pct' clip_id='clip_processCPU_pct' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
                 "</svg>" +
                 "<div width='46.5%' style='margin-left: 0%; float: left;'>" + processCPU_time + "</div>" +
                 "<div width='46.5%' style='margin-left: 54%;'>" + processCPU_pct + "</div>" +
@@ -934,58 +1211,101 @@ var SelectedClusterNodeView = Backbone.View.extend({
         $(rowIndicesTitle).append(indicesTitleCol);
         $(indicesTitleCol).append(indicesTitleP);
 
-        // Indices detail row #1
+        // Indices info row
 
-        var indices1Info = Mustache.render(templates.selectedClusterNode.indices1Template, {});
+        var indicesInfo1 = Mustache.render(templates.selectedClusterNode.indices1Template1, {});
+        var indicesInfo2 = Mustache.render(templates.selectedClusterNode.indices1Template2, {});
+        var indicesInfo3 = Mustache.render(templates.selectedClusterNode.indices1Template3, {});
+        var indicesInfoP1 = this.make("p", {}, indicesInfo1);
+        var indicesInfoP2 = this.make("p", {}, indicesInfo2);
+        var indicesInfoP3 = this.make("p", {}, indicesInfo3);
 
-        var indicesp1 = this.make("p", {}, indices1Info);
-        var indicesp2 = this.make("p", {},
-            "<svg width='100%' height='160'>" +
-                "<svg id='svg_indicesSearchReqs' clip_id='clip_indicesSearchReqs' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-                "<svg id='svg_indicesSearchTime' clip_id='clip_indicesSearchTime' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-            "</svg>"
-        );
-        var indicesp3 = this.make("p", {},
-            "<svg width='100%' height='160'>" +
-                "<svg id='svg_indicesGetReqs' clip_id='clip_indicesGetReqs' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-                "<svg id='svg_indicesGetTime' clip_id='clip_indicesGetTime' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-            "</svg>"
-        );
+        var indicesInfoCol1 = this.make("div", {"class":"threecol"});
+        var indicesInfoCol2 = this.make("div", {"class":"threecol"});
+        var indicesInfoCol3 = this.make("div", {"class":"sixcol last"});
 
-        var indicesCol1 = this.make("div", {"class":"twocol"});
-        var indicesCol2 = this.make("div", {"class":"fivecol"});
-        var indicesCol3 = this.make("div", {"class":"fivecol last"});
+        var rowIndicesInfo = this.make("div", {"class":"row nodeDetail"});
 
-        var rowIndices = this.make("div", {"class":"row nodeDetail"});
-        $(rowIndices).append(indicesCol1, indicesCol2, indicesCol3);
-        $(indicesCol1).append(indicesp1);
-        $(indicesCol2).append(indicesp2);
-        $(indicesCol3).append(indicesp3);
+        $(rowIndicesInfo).append(indicesInfoCol1, indicesInfoCol2, indicesInfoCol3);
+        $(indicesInfoCol1).append(indicesInfoP1);
+        $(indicesInfoCol2).append(indicesInfoP2);
+        $(indicesInfoCol3).append(indicesInfoP3);
 
-        // Indices detail row #2
+        // Indices charts row #1
 
-        var indicesp1_2 = this.make("p", {}, "");
-        var indicesp2_2 = this.make("p", {},
-            "<svg width='100%' height='160'>" +
-                "<rect x='0' y='0' width='100%' height='100%' fill='#eee' stroke-width='1' />" +
-            "</svg>"
-        );
-        var indicesp3_2 = this.make("p", {},
-            "<svg width='100%' height='160'>" +
-                "<svg id='svg_indicesIndexingReqs' clip_id='clip_indicesIndexingReqs' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-                "<svg id='svg_indicesIndexingTime' clip_id='clip_indicesIndexingTime' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMin' viewBox='0 0 250 160'/>" +
-            "</svg>"
+        var indicesSearchReqs = Mustache.render(templates.selectedClusterNode.indicesSearchReqsTemplate, jsonModel);
+        var indicesSearchTime = Mustache.render(templates.selectedClusterNode.indicesSearchTimeTemplate, jsonModel);
+
+        var indicesCharts1p1 = this.make("p", {},
+            "<div style='overflow: auto;'>" +
+                "<svg width='100%' height='160'>" +
+                    "<svg id='svg_indicesSearchReqs' clip_id='clip_indicesSearchReqs' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_indicesSearchTime' clip_id='clip_indicesSearchTime' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                "</svg>" +
+                "<div width='46.5%' style='margin-left: 0%; float: left;'>" + indicesSearchReqs + "</div>" +
+                "<div width='46.5%' style='margin-left: 54%;'>" + indicesSearchTime + "</div>" +
+            "</div>"
         );
 
-        var indicesCol1_2 = this.make("div", {"class":"twocol"});
-        var indicesCol2_2 = this.make("div", {"class":"fivecol"});
-        var indicesCol3_2 = this.make("div", {"class":"fivecol last"});
+        var indicesGetReqs = Mustache.render(templates.selectedClusterNode.indicesGetReqsTemplate, jsonModel);
+        var indicesGetTime = Mustache.render(templates.selectedClusterNode.indicesGetTimeTemplate, jsonModel);
 
-        var rowIndices_2 = this.make("div", {"class":"row nodeDetail"});
-        $(rowIndices_2).append(indicesCol1_2, indicesCol2_2, indicesCol3_2);
-        $(indicesCol1_2).append(indicesp1_2);
-        $(indicesCol2_2).append(indicesp2_2);
-        $(indicesCol3_2).append(indicesp3_2);
+        var indicesCharts1p2 = this.make("p", {},
+            "<div style='overflow: auto;'>" +
+                "<svg width='100%' height='160'>" +
+                    "<svg id='svg_indicesGetReqs' clip_id='clip_indicesGetReqs' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_indicesGetTime' clip_id='clip_indicesGetTime' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                "</svg>" +
+                "<div width='46.5%' style='margin-left: 0%; float: left;'>" + indicesGetReqs + "</div>" +
+                "<div width='46.5%' style='margin-left: 54%;'>" + indicesGetTime + "</div>" +
+            "</div>"
+        );
+
+        var indicesCharts1Col1 = this.make("div", {"class":"sixcol"});
+        var indicesCharts1Col2 = this.make("div", {"class":"sixcol last"});
+
+        var rowIndicesCharts1 = this.make("div", {"class":"row nodeDetail"});
+        $(rowIndicesCharts1).append(indicesCharts1Col1, indicesCharts1Col2);
+        $(indicesCharts1Col1).append(indicesCharts1p1);
+        $(indicesCharts1Col2).append(indicesCharts1p2);
+
+        // Indices charts row #2
+
+        var indicesCacheSize = Mustache.render(templates.selectedClusterNode.indicesCacheSizeTemplate, jsonModel);
+        var indicesCacheEvictions = Mustache.render(templates.selectedClusterNode.indicesCacheEvictionsTemplate, jsonModel);
+
+        var indicesCharts2p1 = this.make("p", {},
+            "<div style='overflow: auto;'>" +
+                "<svg width='100%' height='160'>" +
+                    "<svg id='svg_indicesCacheSize' clip_id='clip_indicesCacheSize' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_indicesCacheEvictions' clip_id='clip_indicesCacheEvictions' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                "</svg>" +
+                "<div width='46.5%' style='margin-left: 0%; float: left;'>" + indicesCacheSize + "</div>" +
+                "<div width='46.5%' style='margin-left: 54%;'>" + indicesCacheEvictions + "</div>" +
+            "</div>"
+        );
+
+        var indicesIndexingReqs = Mustache.render(templates.selectedClusterNode.indicesIndexingReqsTemplate, jsonModel);
+        var indicesIndexingTime = Mustache.render(templates.selectedClusterNode.indicesIndexingTimeTemplate, jsonModel);
+
+        var indicesCharts2p2 = this.make("p", {},
+            "<div style='overflow: auto;'>" +
+                "<svg width='100%' height='160'>" +
+                    "<svg id='svg_indicesIndexingReqs' clip_id='clip_indicesIndexingReqs' width='46.5%' height='100%' x='0' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                    "<svg id='svg_indicesIndexingTime' clip_id='clip_indicesIndexingTime' width='46.5%' height='100%' x='54%' y='0' preserveAspectRatio='xMinYMid' viewBox='0 0 250 160'/>" +
+                "</svg>" +
+                "<div width='46.5%' style='margin-left: 0%; float: left;'>" + indicesIndexingReqs + "</div>" +
+                "<div width='46.5%' style='margin-left: 54%;'>" + indicesIndexingTime + "</div>" +
+            "</div>"
+        );
+
+        var indicesCharts2Col1 = this.make("div", {"class":"sixcol"});
+        var indicesCharts2Col2 = this.make("div", {"class":"sixcol last"});
+
+        var rowIndicesCharts2 = this.make("div", {"class":"row nodeDetail"});
+        $(rowIndicesCharts2).append(indicesCharts2Col1, indicesCharts2Col2);
+        $(indicesCharts2Col1).append(indicesCharts2p1);
+        $(indicesCharts2Col2).append(indicesCharts2p2);
 
         // File system title
 
@@ -1004,6 +1324,9 @@ var SelectedClusterNodeView = Backbone.View.extend({
             rowJvmInfo,
             rowJvmCharts,
 
+			rowtpTitle,
+			rowTpCharts,
+
             rowOsTitle,
             rowOSInfo,
             rowOsCharts,
@@ -1015,8 +1338,9 @@ var SelectedClusterNodeView = Backbone.View.extend({
             rowTransportCharts,
 
             rowIndicesTitle,
-            rowIndices,
-            rowIndices_2,
+            rowIndicesInfo,
+            rowIndicesCharts1,
+            rowIndicesCharts2,
 
             rowFsTitle
 

@@ -1,4 +1,23 @@
-// just nodes from _cluster/state
+/*   
+   Copyright 2011-2014 Lukas Vlcek
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
+*/
+
+/**
+ * REST end point: _cluster/state/nodes,master_node
+ * @see <a href="http://www.elasticsearch.org/guide/en/elasticsearch/reference/current/cluster-state.html">cluster state</a>
+ */
 
 var NodeState = Backbone.Model.extend({
     defaults: {
@@ -7,11 +26,11 @@ var NodeState = Backbone.Model.extend({
 });
 
 var NodesState = Backbone.Collection.extend({
+
     model: NodeState,
+
     url: function() {
-        var flags = ["filter_routing_table", "filter_metadata", "filter_blocks"];
-        var query = flags.join("=true&")+"=true";
-        return '/_cluster/state?'+query;
+        return '/_cluster/state/nodes,master_node';
     },
 
     // Move important keys into values.
@@ -48,5 +67,18 @@ var NodesState = Backbone.Collection.extend({
 
         var rejected = collection.reject(iterator);
         collection.remove(rejected, options);
+    },
+
+    // return master node id if available, otherwise return empty string
+    getMasterNodeId: function() {
+        var masterNodeId = "";
+        var collection = this;
+        var masterNode = collection.find(function(node){
+            return node.get("master");
+        });
+        if (masterNode) {
+            masterNodeId = masterNode.id;
+        }
+        return masterNodeId;
     }
 });
